@@ -32,6 +32,19 @@ export function formPage(values: FormValues = {}, errors: string[] = []): string
     `<h1>Rank grid scan</h1>
 <p>Runs one ${GRID_SIZE}x${GRID_SIZE} Google Maps scan, ${SPACING_MILES} mile between points.</p>
 ${errBlock}
+<section class="find" aria-labelledby="find-h">
+  <h2 id="find-h">Find business</h2>
+  <p class="hint">Look up the Place ID by name instead of pasting it. Each lookup is a paid DataForSEO request; its cost is shown after.</p>
+  <label for="biz-name">Business name</label>
+  <input id="biz-name" autocomplete="off">
+  <label for="biz-city">City <small>(City,State,Country, e.g. Pasadena,California,United States)</small></label>
+  <input id="biz-city" autocomplete="off" placeholder="Pasadena,California,United States">
+  <button type="button" id="biz-find">Find</button>
+  <p id="biz-status" role="status" aria-live="polite"></p>
+  <ul id="biz-results" class="results"></ul>
+  <label for="biz-saved">Previously confirmed businesses</label>
+  <select id="biz-saved"><option value="">Choose a saved business...</option></select>
+</section>
 <form method="post" action="/scan">
   <label for="placeId">Place ID <small>(Google Place ID of the business)</small></label>
   <input id="placeId" name="placeId" required value="${esc(values.placeId ?? "")}">
@@ -42,7 +55,118 @@ ${errBlock}
   <label for="zoom">Zoom <small>(optional, ${MIN_ZOOM}-${MAX_ZOOM}, default ${DEFAULT_ZOOM})</small></label>
   <input id="zoom" name="zoom" inputmode="numeric" value="${esc(values.zoom ?? "")}">
   <button type="submit">Start scan</button>
-</form>`,
+</form>
+<script>
+const $ = (n) => document.getElementById(n);
+let saved = [];
+
+function money(n) { return "$" + Number(Number(n).toFixed(4)); }
+
+function setStatus(text, isError) {
+  const el = $("biz-status");
+  el.textContent = text;
+  el.className = isError ? "bad" : "";
+}
+
+function useBusiness(b, label) {
+  $("placeId").value = b.placeId;
+  setStatus(label + ": Place ID set to " + b.placeId + " (" + (b.name || "unnamed") + ").", false);
+}
+
+function renderSaved() {
+  const sel = $("biz-saved");
+  sel.replaceChildren(new Option("Choose a saved business...", ""));
+  for (const b of saved) sel.add(new Option((b.name || b.placeId) + (b.address ? " - " + b.address : ""), b.placeId));
+}
+
+async function loadSaved() {
+  try {
+    const res = await fetch("/businesses");
+    saved = (await res.json()).businesses || [];
+    renderSaved();
+  } catch (e) { /* the dropdown just stays empty */ }
+}
+
+async function confirmBusiness(b) {
+  $("placeId").value = b.placeId; // always fill the field, even if saving fails
+  try {
+    const res = await fetch("/business", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "HTTP " + res.status);
+    setStatus("Confirmed and saved: " + (b.name || b.placeId) + ". Place ID filled in below.", false);
+    await loadSaved();
+  } catch (e) {
+    setStatus("Place ID filled in, but it could not be saved: " + e.message, true);
+  }
+}
+
+function showResults(businesses) {
+  const ul = $("biz-results");
+  ul.replaceChildren();
+  for (const b of businesses) {
+    const li = document.createElement("li");
+    const title = document.createElement("strong");
+    title.textContent = b.name || "(no name returned)";
+    const lines = [b.address || "(no address returned)", "place_id: " + b.placeId, "cid: " + (b.cid || "-")];
+    li.append(title);
+    for (const t of lines) { const d = document.createElement("div"); d.textContent = t; li.append(d); }
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Use this business";
+    btn.addEventListener("click", () => confirmBusiness(b));
+    li.append(btn);
+    ul.append(li);
+  }
+}
+
+async function find() {
+  const btn = $("biz-find");
+  $("biz-results").replaceChildren();
+  btn.disabled = true; // one click = one paid request
+  setStatus("Looking up...", false);
+  try {
+    const res = await fetch("/lookup", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: $("biz-name").value, location: $("biz-city").value }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
+    const cost = data.costUsd === null ? "" : " Lookup cost: " + money(data.costUsd) + ".";
+    if (!data.businesses.length) {
+      setStatus("No business found for that name and city. Check the spelling, or paste a Place ID below." + cost, true);
+    } else {
+      setStatus((data.businesses.length === 1 ? "Found 1 business." : "Found " + data.businesses.length + " businesses.") +
+        " Confirm it to fill the Place ID." + cost, false);
+      showResults(data.businesses);
+    }
+  } catch (e) {
+    setStatus(e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("biz-find").addEventListener("click", find);
+for (const id of ["biz-name", "biz-city"]) {
+  $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); find(); } });
+}
+$("biz-saved").addEventListener("change", (e) => {
+  const b = saved.find((x) => x.placeId === e.target.value);
+  if (b) useBusiness(b, "Saved business");
+});
+loadSaved();
+</script>`,
+    `
+  :root{color-scheme:light}body{background:#fff;color:#111}
+  .find{border:1px solid #ccc;border-radius:.5rem;padding:0 1rem 1rem;margin:1rem 0}
+  .find h2{margin:.8rem 0 .2rem;font-size:1.1rem}
+  .hint{margin:0;color:#555;font-size:.9rem}
+  select{width:100%;padding:.5rem;font:inherit;box-sizing:border-box}
+  #biz-status{margin:.75rem 0 0;font-weight:600}#biz-status.bad{color:#b02a1f}
+  .results{list-style:none;padding:0;margin:.5rem 0 0}
+  .results li{border:1px solid #ccc;border-radius:.4rem;padding:.6rem .8rem;margin-top:.5rem;overflow-wrap:anywhere}
+  .results button{margin-top:.5rem}`,
   );
 }
 

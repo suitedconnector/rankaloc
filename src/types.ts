@@ -45,3 +45,12 @@ export interface Scan {
   /** Last transient problem while polling (HTTP/API-level), cleared on a clean poll. */
   lastError: string | null;
 }
+
+/** A business the user confirmed through "Find business". Stored in KV as `business:<placeId>`. */
+export interface Business {
+  name: string;
+  address: string;
+  placeId: string;
+  cid: string;
+  confirmedAt: string; // ISO 8601
+}

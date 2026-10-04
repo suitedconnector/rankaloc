@@ -3,10 +3,11 @@
 //   GET  {base}/v3/serp/google/maps/task_get/advanced/{id}
 // Docs: https://docs.dataforseo.com/v3/serp/google/maps/task_post/
 //       https://docs.dataforseo.com/v3/serp/google/maps/task_get/advanced/
+//       https://docs.dataforseo.com/v3/business_data/google/my_business_info/live/
 //       https://docs.dataforseo.com/v3/appendix/errors/
 
 import { DFS_BASE_URL, LANGUAGE_CODE } from "./config";
-import type { Env } from "./types";
+import type { Business, Env } from "./types";
 
 /** Status codes from the errors appendix. */
 const OK = 20000;
@@ -41,6 +42,9 @@ interface DfsItem {
   rank_group?: number;
   rank_absolute?: number;
   place_id?: string;
+  title?: string; // My Business Info: business name
+  address?: string | null;
+  cid?: string | null;
 }
 
 export interface TaskBody {
@@ -148,4 +152,42 @@ export async function getTask(env: Env, taskId: string, placeId: string): Promis
     }
   }
   return { kind: "done", rank, checked };
+}
+
+export interface BusinessLookup {
+  businesses: Omit<Business, "confirmedAt">[];
+  /** USD charged for the lookup, from the response `cost` field (null if absent). */
+  costUsd: number | null;
+}
+
+/**
+ * One My Business Info Live request. `keyword` is the business name only; the city goes in
+ * `location_name` ("City,State,Country"), which the docs require when no location_code or
+ * location_coordinate is sent. The docs say each result holds a single business, but every
+ * item found in every result is returned so a list works too.
+ */
+export async function lookupBusiness(env: Env, name: string, locationName: string): Promise<BusinessLookup> {
+  const res = await fetch(`${base(env)}/v3/business_data/google/my_business_info/live`, {
+    method: "POST",
+    headers: headers(env),
+    body: JSON.stringify([{ keyword: name, location_name: locationName, language_code: LANGUAGE_CODE }]),
+  });
+  const body = await readEnvelope(res);
+  const task = body.tasks?.[0];
+  if (!task) throw new DfsError("DataForSEO response had no task entry.");
+  if (task.status_code !== OK) throw new DfsError(`DataForSEO ${task.status_code}: ${task.status_message}`);
+
+  const businesses: BusinessLookup["businesses"] = [];
+  for (const result of task.result ?? []) {
+    for (const item of result.items ?? []) {
+      if (!item.place_id) continue;
+      businesses.push({
+        name: item.title ?? "",
+        address: item.address ?? "",
+        placeId: item.place_id,
+        cid: item.cid ?? "",
+      });
+    }
+  }
+  return { businesses, costUsd: typeof body.cost === "number" ? body.cost : (task.cost ?? null) };
 }

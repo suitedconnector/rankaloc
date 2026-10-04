@@ -8,14 +8,15 @@ import {
   MIN_ZOOM,
   POLL_MIN_INTERVAL_MS,
 } from "./config";
-import { DfsError, getTask, postTasks, taskBody } from "./dataforseo";
+import { DfsError, getTask, lookupBusiness, postTasks, taskBody } from "./dataforseo";
 import type { PostedTask } from "./dataforseo";
 import { buildGrid } from "./grid";
 import { errorPage, formPage, startedPage } from "./html";
-import type { Env, Scan, ScanPoint } from "./types";
+import type { Business, Env, Scan, ScanPoint } from "./types";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const scanKey = (id: string) => `scan:${id}`;
+const businessKey = (placeId: string) => `business:${placeId}`;
 
 const html = (body: string, status = 200) =>
   new Response(body, { status, headers: { "Content-Type": "text/html; charset=utf-8" } });
@@ -36,6 +37,18 @@ export default {
     if (pathname === "/scan") {
       if (request.method !== "POST") return methodNotAllowed("POST");
       return startScan(request, env);
+    }
+    if (pathname === "/lookup") {
+      if (request.method !== "POST") return methodNotAllowed("POST");
+      return lookup(request, env);
+    }
+    if (pathname === "/business") {
+      if (request.method !== "POST") return methodNotAllowed("POST");
+      return saveBusiness(request, env);
+    }
+    if (pathname === "/businesses") {
+      if (request.method !== "GET") return methodNotAllowed("GET");
+      return listBusinesses(env);
     }
     const match = pathname.match(/^\/scan\/([^/]+)$/);
     if (match) {
@@ -226,4 +239,76 @@ async function advance(scan: Scan, env: Env): Promise<Scan> {
   if (!scan.points.some((p) => p.state === "pending")) scan.status = "complete";
   await env.SCANS.put(scanKey(scan.id), JSON.stringify(scan));
   return scan;
+}
+
+// ---------------------------------------------------------------- find a business
+
+const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+
+/**
+ * POST /lookup {name, location}: one My Business Info Live request.
+ * `location` must be "City,State,Country" (DataForSEO location_name), e.g.
+ * "Pasadena,California,United States". Responds {businesses, costUsd} or {error}.
+ */
+async function lookup(request: Request, env: Env): Promise<Response> {
+  const missing = (["DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD"] as const).filter((k) => !env[k]);
+  if (missing.length) return json({ error: `Missing Worker secret(s): ${missing.join(", ")}. See the README.` }, 500);
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return json({ error: "Send JSON with a name and a city." }, 400);
+  }
+  const name = str(body.name);
+  // Spaces around commas are tolerated: "Pasadena, California, United States".
+  const location = str(body.location).split(",").map((part) => part.trim()).join(",");
+
+  if (!name) return json({ error: "Enter a business name." }, 400);
+  if (name.length > 700) return json({ error: "Business name must be 700 characters or fewer." }, 400);
+  if (!str(body.location)) return json({ error: "Enter a city." }, 400);
+  // Checked here so a malformed location does not cost a paid request.
+  if (location.split(",").filter(Boolean).length < 3) {
+    return json({ error: 'City must be "City,State,Country", e.g. Pasadena,California,United States.' }, 400);
+  }
+
+  try {
+    const { businesses, costUsd } = await lookupBusiness(env, name, location);
+    return json({ businesses, costUsd });
+  } catch (err) {
+    return json({ error: err instanceof DfsError ? err.message : "Could not reach DataForSEO." }, 502);
+  }
+}
+
+/** POST /business {name, address, placeId, cid}: stores a confirmed business as `business:<placeId>`. */
+async function saveBusiness(request: Request, env: Env): Promise<Response> {
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return json({ error: "Send JSON." }, 400);
+  }
+  const placeId = str(body.placeId);
+  if (!placeId || placeId.length > 300) return json({ error: "A place ID is required." }, 400);
+
+  const business: Business = {
+    name: str(body.name).slice(0, 300),
+    address: str(body.address).slice(0, 300),
+    placeId,
+    cid: str(body.cid).slice(0, 100),
+    confirmedAt: new Date().toISOString(),
+  };
+  await env.SCANS.put(businessKey(placeId), JSON.stringify(business));
+  return json({ business });
+}
+
+/** GET /businesses: previously confirmed businesses, newest first (up to 100). */
+async function listBusinesses(env: Env): Promise<Response> {
+  const { keys } = await env.SCANS.list({ prefix: "business:", limit: 100 });
+  const rows = await Promise.all(keys.map((k) => env.SCANS.get(k.name)));
+  const businesses = rows
+    .filter((raw): raw is string => raw !== null)
+    .map((raw) => JSON.parse(raw) as Business)
+    .sort((a, b) => b.confirmedAt.localeCompare(a.confirmedAt));
+  return json({ businesses });
 }
