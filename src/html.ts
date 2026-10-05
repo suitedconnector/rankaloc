@@ -66,9 +66,16 @@ function setStatus(text, isError) {
   el.className = isError ? "bad" : "";
 }
 
+function fillCenter(b) {
+  if (typeof b.lat !== "number" || typeof b.lng !== "number") return false;
+  $("center").value = b.lat + "," + b.lng; // stays editable
+  return true;
+}
+
 function useBusiness(b, label) {
   $("placeId").value = b.placeId;
-  setStatus(label + ": Place ID set to " + b.placeId + " (" + (b.name || "unnamed") + ").", false);
+  const centered = fillCenter(b);
+  setStatus(label + ": Place ID set to " + b.placeId + " (" + (b.name || "unnamed") + ")." + (centered ? " Center filled in." : ""), false);
 }
 
 function renderSaved() {
@@ -87,15 +94,16 @@ async function loadSaved() {
 
 async function confirmBusiness(b) {
   $("placeId").value = b.placeId; // always fill the field, even if saving fails
+  const centered = fillCenter(b);
   try {
     const res = await fetch("/business", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b),
     });
     if (!res.ok) throw new Error((await res.json()).error || "HTTP " + res.status);
-    setStatus("Confirmed and saved: " + (b.name || b.placeId) + ". Place ID filled in below.", false);
+    setStatus("Confirmed and saved: " + (b.name || b.placeId) + ". Place ID" + (centered ? " and center" : "") + " filled in below.", false);
     await loadSaved();
   } catch (e) {
-    setStatus("Place ID filled in, but it could not be saved: " + e.message, true);
+    setStatus("Place ID" + (centered ? " and center" : "") + " filled in, but it could not be saved: " + e.message, true);
   }
 }
 
@@ -107,6 +115,7 @@ function showResults(businesses) {
     const title = document.createElement("strong");
     title.textContent = b.name || "(no name returned)";
     const lines = [b.address || "(no address returned)", "place_id: " + b.placeId];
+    if (typeof b.lat === "number" && typeof b.lng === "number") lines.push("center: " + b.lat + "," + b.lng);
     li.append(title);
     for (const t of lines) { const d = document.createElement("div"); d.textContent = t; li.append(d); }
     const btn = document.createElement("button");

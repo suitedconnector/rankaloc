@@ -52,6 +52,9 @@ export interface Business {
   name: string;
   address: string;
   placeId: string;
+  /** Place location from Places Text Search; absent on businesses saved before it was requested. */
+  lat?: number;
+  lng?: number;
   /** Only on businesses saved when "Find business" used DataForSEO. */
   cid?: string;
   confirmedAt: string; // ISO 8601

@@ -274,7 +274,7 @@ async function lookup(request: Request, env: Env): Promise<Response> {
   }
 }
 
-/** POST /business {name, address, placeId}: stores a confirmed business as `business:<placeId>`. */
+/** POST /business {name, address, placeId, lat?, lng?}: stores a confirmed business as `business:<placeId>`. */
 async function saveBusiness(request: Request, env: Env): Promise<Response> {
   let body: Record<string, unknown>;
   try {
@@ -291,6 +291,11 @@ async function saveBusiness(request: Request, env: Env): Promise<Response> {
     placeId,
     confirmedAt: new Date().toISOString(),
   };
+  const { lat, lng } = body;
+  if (typeof lat === "number" && typeof lng === "number" && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+    business.lat = lat;
+    business.lng = lng;
+  }
   await env.SCANS.put(businessKey(placeId), JSON.stringify(business));
   return json({ business });
 }

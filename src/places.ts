@@ -12,13 +12,14 @@ const URL_SEARCH_TEXT = "https://places.googleapis.com/v1/places:searchText";
 //   places.id               Text Search Essentials (IDs Only)
 //   places.displayName      Text Search Pro
 //   places.formattedAddress Text Search Pro
+//   places.location         Text Search Pro
 // A request is billed at the highest SKU among its fields, so this mask bills as Pro.
-const FIELD_MASK = "places.id,places.displayName,places.formattedAddress";
+const FIELD_MASK = "places.id,places.displayName,places.formattedAddress,places.location";
 
 export class PlacesError extends Error {}
 
 interface PlacesResponse {
-  places?: { id?: string; displayName?: { text?: string }; formattedAddress?: string }[];
+  places?: { id?: string; displayName?: { text?: string }; formattedAddress?: string; location?: { latitude?: number; longitude?: number } }[];
   error?: { code?: number; status?: string; message?: string };
 }
 
@@ -59,7 +60,16 @@ export async function lookupBusiness(env: Env, name: string, city: string): Prom
   const businesses: PlacesLookup["businesses"] = [];
   for (const p of body.places ?? []) {
     if (!p.id) continue;
-    businesses.push({ name: p.displayName?.text ?? "", address: p.formattedAddress ?? "", placeId: p.id });
+    const b: PlacesLookup["businesses"][number] = {
+      name: p.displayName?.text ?? "",
+      address: p.formattedAddress ?? "",
+      placeId: p.id,
+    };
+    if (typeof p.location?.latitude === "number" && typeof p.location.longitude === "number") {
+      b.lat = p.location.latitude;
+      b.lng = p.location.longitude;
+    }
+    businesses.push(b);
   }
   return { businesses };
 }
