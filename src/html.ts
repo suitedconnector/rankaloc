@@ -68,7 +68,7 @@ function setStatus(text, isError) {
 
 function fillCenter(b) {
   if (typeof b.lat !== "number" || typeof b.lng !== "number") return false;
-  $("center").value = b.lat + "," + b.lng; // stays editable
+  $("center").value = Number(b.lat.toFixed(6)) + "," + Number(b.lng.toFixed(6)); // stays editable
   return true;
 }
 
