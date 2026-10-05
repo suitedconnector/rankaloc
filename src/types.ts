@@ -16,6 +16,17 @@ export interface GridPoint {
 
 export type PointState = "pending" | "done" | "error";
 
+/** One maps_search result at a grid point. Only these fields are stored, to keep the KV value small. */
+export interface Competitor {
+  name: string; // DataForSEO `title`
+  placeId: string;
+  cid?: string;
+  rank: number; // `rank_group`, the same field used for the scan's own-business rank
+  rating?: number; // `rating.value`
+  votes?: number; // `rating.votes_count`
+  category?: string;
+}
+
 export interface ScanPoint extends GridPoint {
   /** Rank of the place ID in this point's results, or null if not found. */
   rank: number | null;
@@ -24,6 +35,8 @@ export interface ScanPoint extends GridPoint {
   /** How many maps_search results were checked at this point. */
   checked: number | null;
   error: string | null;
+  /** maps_search results at this point. Absent on scans saved before competitors were stored. */
+  results?: Competitor[];
 }
 
 export interface ScanInputs {

@@ -227,6 +227,7 @@ async function advance(scan: Scan, env: Env): Promise<Scan> {
         p.state = "done";
         p.rank = poll.rank;
         p.checked = poll.checked;
+        p.results = poll.results;
         p.error = null;
       } else if (poll.kind === "error") {
         p.state = "error";

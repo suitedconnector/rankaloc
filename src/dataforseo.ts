@@ -6,7 +6,7 @@
 //       https://docs.dataforseo.com/v3/appendix/errors/
 
 import { DFS_BASE_URL, LANGUAGE_CODE } from "./config";
-import type { Env } from "./types";
+import type { Competitor, Env } from "./types";
 
 /** Status codes from the errors appendix. */
 const OK = 20000;
@@ -41,6 +41,10 @@ interface DfsItem {
   rank_group?: number;
   rank_absolute?: number;
   place_id?: string;
+  title?: string | null;
+  cid?: string | null;
+  category?: string | null;
+  rating?: { value?: number | null; votes_count?: number | null } | null;
 }
 
 export interface TaskBody {
@@ -59,7 +63,7 @@ export interface PostedTask {
 export type TaskPoll =
   | { kind: "pending" }
   | { kind: "error"; message: string }
-  | { kind: "done"; rank: number | null; checked: number };
+  | { kind: "done"; rank: number | null; checked: number; results: Competitor[] };
 
 function headers(env: Env): HeadersInit {
   // Basic Authentication: base64("login:password"). Credentials come from Worker secrets.
@@ -140,12 +144,25 @@ export async function getTask(env: Env, taskId: string, placeId: string): Promis
   const items = task.result?.[0]?.items ?? [];
   let checked = 0;
   let rank: number | null = null;
+  const results: Competitor[] = [];
   for (const item of items) {
     if (item.type !== "maps_search") continue;
     checked++;
+    results.push(...competitorOf(item));
     if (rank === null && item.place_id === placeId && typeof item.rank_group === "number") {
       rank = item.rank_group;
     }
   }
-  return { kind: "done", rank, checked };
+  return { kind: "done", rank, checked, results };
+}
+
+/** The stored fields of one maps_search item. Items without a place_id or rank_group are skipped. */
+function competitorOf(item: DfsItem): Competitor[] {
+  if (!item.place_id || typeof item.rank_group !== "number") return [];
+  const c: Competitor = { name: (item.title ?? "").slice(0, 150), placeId: item.place_id, rank: item.rank_group };
+  if (item.cid) c.cid = item.cid;
+  if (typeof item.rating?.value === "number") c.rating = item.rating.value;
+  if (typeof item.rating?.votes_count === "number") c.votes = item.rating.votes_count;
+  if (item.category) c.category = item.category.slice(0, 80);
+  return [c];
 }

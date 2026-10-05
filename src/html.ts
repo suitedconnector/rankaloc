@@ -196,6 +196,12 @@ export function startedPage(scanId: string): string {
   .cell.none{background:#fff;color:#444;border:2px solid #999;font-size:.8rem;font-weight:600}
   .cell.error{background:#c0392b;font-size:.8rem}
   .legend{font-size:.85rem;color:#555}
+  .tablewrap{overflow-x:auto}
+  table.comp{border-collapse:collapse;width:100%;font-size:.85rem}
+  .comp caption{text-align:left;font-weight:600;padding:.3rem 0}
+  .comp th,.comp td{border-bottom:1px solid #ddd;padding:.35rem .5rem;text-align:left;vertical-align:top}
+  .comp td.num,.comp th.num{text-align:right;white-space:nowrap}
+  .comp tr.me{background:#e3f1e6;font-weight:700}
   @keyframes pulse{50%{opacity:.45}}
   @media (prefers-reduced-motion:reduce){.cell.pending{animation:none}}`;
   return page(
@@ -215,6 +221,9 @@ export function startedPage(scanId: string): string {
 <div id="grid" aria-label="Rank at each grid point, north at top"></div>
 <p class="legend">North is up. Standard queue results take up to about 5 minutes; this page checks every 10 seconds.
 Rank 1-3 green, 4-10 amber, 11 and up orange. Gray pulsing = waiting for DataForSEO.</p>
+<h2>Competitors</h2>
+<p id="comp-note" class="legend"></p>
+<div id="comp-wrap" class="tablewrap"></div>
 <p><a id="raw" href="/scan/${esc(scanId)}">View raw JSON</a></p>
 <script>
 const id = ${JSON.stringify(scanId)};
@@ -248,6 +257,104 @@ function cellFor(p) {
   return c;
 }
 
+const TOP_ROWS = 20;
+let showAll = false;
+let lastScan = null;
+
+/** One row per business, built from the points that finished with stored results. */
+function aggregate(points) {
+  const rows = new Map();
+  for (const p of points) {
+    const seen = new Set();
+    for (const r of p.results) {
+      if (seen.has(r.placeId)) continue; // count a business once per point
+      seen.add(r.placeId);
+      let a = rows.get(r.placeId);
+      if (!a) {
+        a = { placeId: r.placeId, name: "", count: 0, sum: 0, best: Infinity, rating: null, votes: null, category: "" };
+        rows.set(r.placeId, a);
+      }
+      a.count++;
+      a.sum += r.rank;
+      if (r.rank < a.best) a.best = r.rank;
+      if (!a.name && r.name) a.name = r.name;
+      if (a.rating === null && typeof r.rating === "number") a.rating = r.rating;
+      if (a.votes === null && typeof r.votes === "number") a.votes = r.votes;
+      if (!a.category && r.category) a.category = r.category;
+    }
+  }
+  return [...rows.values()].sort((x, y) => y.count - x.count || x.sum / x.count - y.sum / y.count);
+}
+
+function cell(tag, text, cls) {
+  const c = document.createElement(tag);
+  c.textContent = text;
+  if (cls) c.className = cls;
+  return c;
+}
+
+function renderCompetitors(scan) {
+  const note = $("comp-note"), wrap = $("comp-wrap");
+  const pts = scan.points || [];
+  const done = pts.filter((p) => p.state === "done");
+  const withData = done.filter((p) => Array.isArray(p.results));
+  wrap.replaceChildren();
+  if (!withData.length) {
+    note.textContent = scan.status === "complete" || done.length
+      ? "No competitor data for this scan"
+      : "Competitor data appears as points finish.";
+    return;
+  }
+  const failed = pts.filter((p) => p.state === "error").length;
+  const waiting = pts.filter((p) => p.state === "pending").length;
+  note.textContent = "Based on " + withData.length + " of " + pts.length + " points" +
+    (failed ? " (" + failed + " failed and are not counted)" : "") +
+    (waiting ? " (" + waiting + " still waiting)" : "") +
+    ". Coverage = share of those points where the business appears. Rank is rank_group, the same rank used in the grid.";
+
+  const rows = aggregate(withData);
+  const shown = showAll ? rows : rows.slice(0, TOP_ROWS);
+  const table = document.createElement("table");
+  table.className = "comp";
+  table.append(Object.assign(document.createElement("caption"), {
+    textContent: "Businesses in the results, " + shown.length + " of " + rows.length + " shown",
+  }));
+  const head = document.createElement("tr");
+  for (const [label, num] of [["Business"], ["Points", 1], ["Coverage", 1], ["Avg rank", 1], ["Best rank", 1], ["Rating", 1], ["Reviews", 1], ["Category"]]) {
+    const th = cell("th", label, num ? "num" : "");
+    th.scope = "col";
+    head.append(th);
+  }
+  const thead = document.createElement("thead");
+  thead.append(head);
+  const tbody = document.createElement("tbody");
+  for (const a of shown) {
+    const tr = document.createElement("tr");
+    const mine = a.placeId === scan.inputs.placeId;
+    if (mine) tr.className = "me";
+    tr.append(
+      cell("td", (a.name || "(no name)") + (mine ? " (your business)" : "")),
+      cell("td", String(a.count), "num"),
+      cell("td", Math.round((a.count / withData.length) * 100) + "%", "num"),
+      cell("td", (a.sum / a.count).toFixed(1), "num"),
+      cell("td", String(a.best), "num"),
+      cell("td", a.rating === null ? "-" : String(a.rating), "num"),
+      cell("td", a.votes === null ? "-" : String(a.votes), "num"),
+      cell("td", a.category || "-"),
+    );
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  wrap.append(table);
+  if (rows.length > TOP_ROWS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = showAll ? "Show top " + TOP_ROWS : "Show all " + rows.length;
+    btn.addEventListener("click", () => { showAll = !showAll; renderCompetitors(lastScan); });
+    wrap.append(btn);
+  }
+}
+
 function render(scan) {
   const i = scan.inputs, pts = scan.points || [];
   set("m-keyword", i.keyword);
@@ -274,6 +381,9 @@ function render(scan) {
   const cols = pts.reduce((m, p) => Math.max(m, p.col + 1), 0) || 5;
   grid.style.gridTemplateColumns = "repeat(" + cols + ", 1fr)";
   grid.replaceChildren(...pts.slice().sort((a, b) => a.row - b.row || a.col - b.col).map(cellFor));
+
+  lastScan = scan;
+  renderCompetitors(scan);
 }
 
 async function tick() {
