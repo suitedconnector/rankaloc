@@ -1,3 +1,4 @@
 # Copy to .dev.vars (gitignored) for `wrangler dev`. Never commit real values.
 DATAFORSEO_LOGIN=
 DATAFORSEO_PASSWORD=
+GOOGLE_PLACES_API_KEY=

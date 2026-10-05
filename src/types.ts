@@ -2,6 +2,7 @@ export interface Env {
   SCANS: KVNamespace;
   DATAFORSEO_LOGIN: string;
   DATAFORSEO_PASSWORD: string;
+  GOOGLE_PLACES_API_KEY: string;
   /** Optional. Only for pointing the Worker at a mock server while testing. */
   DATAFORSEO_BASE_URL?: string;
 }
@@ -51,6 +52,7 @@ export interface Business {
   name: string;
   address: string;
   placeId: string;
-  cid: string;
+  /** Only on businesses saved when "Find business" used DataForSEO. */
+  cid?: string;
   confirmedAt: string; // ISO 8601
 }

@@ -8,10 +8,11 @@ import {
   MIN_ZOOM,
   POLL_MIN_INTERVAL_MS,
 } from "./config";
-import { DfsError, getTask, lookupBusiness, postTasks, taskBody } from "./dataforseo";
+import { DfsError, getTask, postTasks, taskBody } from "./dataforseo";
 import type { PostedTask } from "./dataforseo";
 import { buildGrid } from "./grid";
 import { errorPage, formPage, startedPage } from "./html";
+import { PlacesError, lookupBusiness } from "./places";
 import type { Business, Env, Scan, ScanPoint } from "./types";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -246,13 +247,11 @@ async function advance(scan: Scan, env: Env): Promise<Scan> {
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
 /**
- * POST /lookup {name, location}: one My Business Info Live request.
- * `location` must be "City,State,Country" (DataForSEO location_name), e.g.
- * "Pasadena,California,United States". Responds {businesses, costUsd} or {error}.
+ * POST /lookup {name, location}: one Places API (New) Text Search request.
+ * `location` is free text such as "Pasadena, CA". Responds {businesses} or {error}.
  */
 async function lookup(request: Request, env: Env): Promise<Response> {
-  const missing = (["DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD"] as const).filter((k) => !env[k]);
-  if (missing.length) return json({ error: `Missing Worker secret(s): ${missing.join(", ")}. See the README.` }, 500);
+  if (!env.GOOGLE_PLACES_API_KEY) return json({ error: "Missing Worker secret GOOGLE_PLACES_API_KEY. See the README." }, 500);
 
   let body: Record<string, unknown>;
   try {
@@ -261,26 +260,21 @@ async function lookup(request: Request, env: Env): Promise<Response> {
     return json({ error: "Send JSON with a name and a city." }, 400);
   }
   const name = str(body.name);
-  // Spaces around commas are tolerated: "Pasadena, California, United States".
-  const location = str(body.location).split(",").map((part) => part.trim()).join(",");
+  const location = str(body.location);
 
   if (!name) return json({ error: "Enter a business name." }, 400);
-  if (name.length > 700) return json({ error: "Business name must be 700 characters or fewer." }, 400);
-  if (!str(body.location)) return json({ error: "Enter a city." }, 400);
-  // Checked here so a malformed location does not cost a paid request.
-  if (location.split(",").filter(Boolean).length < 3) {
-    return json({ error: 'City must be "City,State,Country", e.g. Pasadena,California,United States.' }, 400);
-  }
+  if (!location) return json({ error: "Enter a city." }, 400);
+  if (name.length > 300 || location.length > 200) return json({ error: "Business name or city is too long." }, 400);
 
   try {
-    const { businesses, costUsd } = await lookupBusiness(env, name, location);
-    return json({ businesses, costUsd });
+    const { businesses } = await lookupBusiness(env, name, location);
+    return json({ businesses });
   } catch (err) {
-    return json({ error: err instanceof DfsError ? err.message : "Could not reach DataForSEO." }, 502);
+    return json({ error: err instanceof PlacesError ? err.message : "Lookup failed." }, 502);
   }
 }
 
-/** POST /business {name, address, placeId, cid}: stores a confirmed business as `business:<placeId>`. */
+/** POST /business {name, address, placeId}: stores a confirmed business as `business:<placeId>`. */
 async function saveBusiness(request: Request, env: Env): Promise<Response> {
   let body: Record<string, unknown>;
   try {
@@ -295,7 +289,6 @@ async function saveBusiness(request: Request, env: Env): Promise<Response> {
     name: str(body.name).slice(0, 300),
     address: str(body.address).slice(0, 300),
     placeId,
-    cid: str(body.cid).slice(0, 100),
     confirmedAt: new Date().toISOString(),
   };
   await env.SCANS.put(businessKey(placeId), JSON.stringify(business));

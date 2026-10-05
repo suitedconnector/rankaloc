@@ -34,11 +34,11 @@ export function formPage(values: FormValues = {}, errors: string[] = []): string
 ${errBlock}
 <section class="find" aria-labelledby="find-h">
   <h2 id="find-h">Find business</h2>
-  <p class="hint">Look up the Place ID by name instead of pasting it. Each lookup is a paid DataForSEO request; its cost is shown after.</p>
+  <p class="hint">Look up the Place ID by name instead of pasting it (Google Places search).</p>
   <label for="biz-name">Business name</label>
   <input id="biz-name" autocomplete="off">
-  <label for="biz-city">City <small>(City,State,Country, e.g. Pasadena,California,United States)</small></label>
-  <input id="biz-city" autocomplete="off" placeholder="Pasadena,California,United States">
+  <label for="biz-city">City <small>(e.g. Pasadena, CA)</small></label>
+  <input id="biz-city" autocomplete="off" placeholder="Pasadena, CA">
   <button type="button" id="biz-find">Find</button>
   <p id="biz-status" role="status" aria-live="polite"></p>
   <ul id="biz-results" class="results"></ul>
@@ -59,8 +59,6 @@ ${errBlock}
 <script>
 const $ = (n) => document.getElementById(n);
 let saved = [];
-
-function money(n) { return "$" + Number(Number(n).toFixed(4)); }
 
 function setStatus(text, isError) {
   const el = $("biz-status");
@@ -108,7 +106,7 @@ function showResults(businesses) {
     const li = document.createElement("li");
     const title = document.createElement("strong");
     title.textContent = b.name || "(no name returned)";
-    const lines = [b.address || "(no address returned)", "place_id: " + b.placeId, "cid: " + (b.cid || "-")];
+    const lines = [b.address || "(no address returned)", "place_id: " + b.placeId];
     li.append(title);
     for (const t of lines) { const d = document.createElement("div"); d.textContent = t; li.append(d); }
     const btn = document.createElement("button");
@@ -123,7 +121,7 @@ function showResults(businesses) {
 async function find() {
   const btn = $("biz-find");
   $("biz-results").replaceChildren();
-  btn.disabled = true; // one click = one paid request
+  btn.disabled = true; // one click = one billable request
   setStatus("Looking up...", false);
   try {
     const res = await fetch("/lookup", {
@@ -132,12 +130,11 @@ async function find() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
-    const cost = data.costUsd === null ? "" : " Lookup cost: " + money(data.costUsd) + ".";
     if (!data.businesses.length) {
-      setStatus("No business found for that name and city. Check the spelling, or paste a Place ID below." + cost, true);
+      setStatus("No business found for that name and city. Check the spelling, or paste a Place ID below.", true);
     } else {
       setStatus((data.businesses.length === 1 ? "Found 1 business." : "Found " + data.businesses.length + " businesses.") +
-        " Confirm it to fill the Place ID." + cost, false);
+        " Confirm it to fill the Place ID.", false);
       showResults(data.businesses);
     }
   } catch (e) {

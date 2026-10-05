@@ -37,13 +37,14 @@ placeholder is fine: local dev uses a simulated KV.
 
 ### 2. Secrets
 
-Credentials are read from the Worker secrets `DATAFORSEO_LOGIN` and `DATAFORSEO_PASSWORD`. They are never in the repo.
+Credentials are read from the Worker secrets `DATAFORSEO_LOGIN` and `DATAFORSEO_PASSWORD` (grid scans) and `GOOGLE_PLACES_API_KEY` (the "Find business" lookup, Places API (New) Text Search). They are never in the repo.
 
 For a deployed Worker:
 
 ```bash
 npx wrangler secret put DATAFORSEO_LOGIN
 npx wrangler secret put DATAFORSEO_PASSWORD
+npx wrangler secret put GOOGLE_PLACES_API_KEY
 ```
 
 For `wrangler dev`, copy the example file and fill it in (`.dev.vars` is gitignored):
