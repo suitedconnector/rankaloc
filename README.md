@@ -5,10 +5,10 @@ Local business rank tracking. **Step 1:** a Cloudflare Worker that runs one loca
 
 ## How a scan works
 
-1. `GET /` shows a form: place ID, keyword, center coordinates (`latitude,longitude`), and an optional zoom (3-21, default 17).
+1. `GET /` shows a form: place ID, keyword, center coordinates (`latitude,longitude`), and an optional zoom (3-21, default 15).
 2. Submitting it (`POST /scan`) computes the 25 grid points and posts one DataForSEO Standard-queue task per point
    (`task_post`, one request, well inside the 100-task limit). Each task uses `search_this_area: true`,
-   `language_code: "en"` and `location_coordinate: "lat,lng,17z"`. The scan is saved to KV as `pending`.
+   `language_code: "en"` and `location_coordinate: "lat,lng,15z"`. The scan is saved to KV as `pending`.
 3. The Standard queue takes up to about 5 minutes, so the Worker does not wait inside one request.
    **Each `GET /scan/:id` checks the tasks still pending** (`task_get/advanced/{id}`), saves any finished ones,
    and returns the stored JSON. It calls DataForSEO at most once per 10 seconds per scan, and the progress page
@@ -74,7 +74,7 @@ KV key `scan:<id>`, one JSON value:
 {
   "id": "…", "timestamp": "2026-10-03T22:27:13.919Z",
   "status": "pending | complete",
-  "inputs": { "placeId": "…", "keyword": "…", "center": { "lat": 0, "lng": 0 }, "zoom": 17, "languageCode": "en" },
+  "inputs": { "placeId": "…", "keyword": "…", "center": { "lat": 0, "lng": 0 }, "zoom": 15, "languageCode": "en" },
   "points": [
     { "row": 0, "col": 0, "lat": 0, "lng": 0, "rank": 2, "state": "done | pending | error",
       "taskId": "…", "checked": 20, "error": null }

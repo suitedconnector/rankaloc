@@ -11,7 +11,7 @@ export const SPACING_MILES = 0.5;
  * (task_post docs). The docs do not say what area each zoom covers, so this default is a
  * starting point to judge from a test scan; the form lets you override it per scan.
  */
-export const DEFAULT_ZOOM = 17;
+export const DEFAULT_ZOOM = 15;
 export const MIN_ZOOM = 3;
 export const MAX_ZOOM = 21;
 
